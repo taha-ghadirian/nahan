@@ -5,7 +5,7 @@ import { connect } from "cloudflare:sockets";
  * Handles real-time binary streams from remote sensor nodes.
  */
 
-const CURRENT_VERSION = "2.5.7";
+const CURRENT_VERSION = "2.6.0";
 
 const getAlpha = () => String.fromCharCode(118, 108, 101, 115, 115);
 const getBeta = () => String.fromCharCode(116, 114, 111, 106, 97, 110);
@@ -5360,6 +5360,21 @@ function getDashboardUI(hasDB) {
           };
 
           const CHANGELOG_DATA = {
+                "2.6.0": {
+                  headline: { en: "SubscriptionURL Change & Control Panel Enhancements", fa: "تغییر SubscriptionURL و بهبود پنل کنترل" },
+                  breaking: [
+                        { en: "SubscriptionURL format changed to include UUID for enhanced security. Existing subscriptions will need to be re-generated.", fa: "فرمت SubscriptionURL تغییر کرده و اکنون شامل UUID برای افزایش امنیت است. مشترکین فعلی نیاز به بازتولید دارند." }
+                  ],
+                  added: [
+                      { en: "Added UUID to SubscriptionURL for improved subscription security", fa: "افزودن UUID به SubscriptionURL برای افزایش امنیت سابسکریپشن" },
+                      { en: "Added Subscription Route to Control Panel", fa: "افزودن مسیر سابسکریپشن به پنل کنترل" }
+                  ],
+                  fixed: [
+                  ],
+                  improved: [
+                  ],
+                  notes: []
+              },
               "2.5.7": {
                   headline: { en: "Dynamic Multi-IP Failover & Keyless Country Flagging", fa: "لینک هوشمند آی‌پی‌ها، بهبود کلودفلر و نگاشت پرچم بدون تحریم" },
                   added: [
@@ -5575,6 +5590,7 @@ function getDashboardUI(hasDB) {
               }
 
               const sections = [
+                  { key: 'breaking', icon: '🚫', color: 'red', items: data.breaking },
                   { key: 'added', icon: '✨', color: 'emerald', items: data.added },
                   { key: 'fixed', icon: '🔧', color: 'blue', items: data.fixed },
                   { key: 'improved', icon: '⚡', color: 'violet', items: data.improved },

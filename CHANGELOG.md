@@ -9,6 +9,38 @@ All notable changes to Project Nahan will be documented in this file.
 
 ---
 
+## [2.6.0] - ۱۴۰۵-۰۳-۳۰ (2026-06-20)
+
+<!-- LANG:FA -->
+### شکننده (BREAKING CHANGE)
+- **تغییر SubscriptionURL**: تمامی SubscriptionURL ها تغییر یافته اند و باید سابسکریپشن جدید در اختیار کاربران خود قرار دهید.
+
+### اضافه شده (Added)
+- **افزوده شدن UUID به SubscriptionURL**: افزایش امنیت برای سابسکریپشن های پابلیک - جلوگیری از جعل سابسکریپشن
+- **افزوده شدن Subscription Route به پنل**: این مقدار را در تنظیمات، ست کنید.
+
+### رفع شده (Fixed)
+
+### بهبود یافته (Improved)
+
+<!-- LANG:FA -->
+
+<!-- LANG:EN -->
+## BREAKING CHANGE
+- **SubscriptionURL Change**: All SubscriptionURLs have been changed and you must provide the new subscription to your users.
+
+### Added
+- **Added UUID to SubscriptionURL**: Improving subscription security, for public subscriptions. 
+- **Added Subscription Route to Control Panel**: Set this value in settings.
+
+### Fixed
+
+### Improved
+
+<!-- LANG:EN -->
+
+---
+
 ## [2.5.7] - ۱۴۰۵-۰۳-۲۹ (2026-06-19)
 
 <!-- LANG:FA -->
