@@ -318,13 +318,19 @@ export default {
                     const isCustomUaAllowed = sysConfig.subUserAgent && sysConfig.subUserAgent.trim().length > 0 && ua.includes(sysConfig.subUserAgent.trim().toLowerCase());
                     const clientHost = request.headers.get("Host") || url.hostname;
                     let targetSub = url.searchParams.get("sub");
+                    let targetId = url.searchParams.get("id");
+
+                    if(!targetId) {
+                        return new Response("Error: Missing 'id' parameter. Please provide your user ID in the subscription link.", { status: 400 });
+                    }
+
                     let hasMultiUser = (sysConfig.users && sysConfig.users.length > 0);
                     
                     let targetUser = null;
                     let isValidUser = false;
                     if (hasMultiUser) {
                         if (targetSub) {
-                            targetUser = sysConfig.users.find(u => u.name.toLowerCase() === targetSub.toLowerCase() || u.id === targetSub);
+                            targetUser = sysConfig.users.find(u => u.name.toLowerCase() === targetSub.toLowerCase() && u.id === targetId);
                             if (targetUser) isValidUser = true;
                         }
                     } else {
@@ -422,22 +428,22 @@ export default {
 
                     if (isClashYaml) {
                         resHeaders.set("Content-Type", "text/yaml; charset=utf-8");
-                        return new Response(await buildYamlProfile(clientHost, targetSub, allowInsecure), {
+                        return new Response(await buildYamlProfile(clientHost, targetId, targetSub, allowInsecure), {
                             headers: resHeaders
                         });
                     } else if (isSingboxJson) {
                         resHeaders.set("Content-Type", "application/json; charset=utf-8");
-                        return new Response(JSON.stringify(await buildSingBoxJsonProfile(clientHost, targetSub, allowInsecure), null, 2), {
+                        return new Response(JSON.stringify(await buildSingBoxJsonProfile(clientHost, targetId, targetSub, allowInsecure), null, 2), {
                             headers: resHeaders
                         });
                     } else if (isClashJson) {
                         resHeaders.set("Content-Type", "application/json; charset=utf-8");
-                        return new Response(JSON.stringify(await buildClashJsonProfile(clientHost, targetSub, allowInsecure), null, 2), {
+                        return new Response(JSON.stringify(await buildClashJsonProfile(clientHost, targetId, targetSub, allowInsecure), null, 2), {
                             headers: resHeaders
                         });
                     } else {
                         resHeaders.set("Content-Type", "text/plain; charset=utf-8");
-                        const raw = await buildUriProfile(clientHost, targetSub, allowInsecure);
+                        const raw = await buildUriProfile(clientHost, targetId, targetSub, allowInsecure);
                         return new Response(safeBtoa(raw), {
                             headers: resHeaders
                         });
@@ -2782,7 +2788,7 @@ function getTransportParams(port) {
     return ["80", "8080", "8880", "2052", "2082", "2086", "2095"].includes(port.toString()) ? "none" : "tls";
 }
 
-function getSubscriptionStats(targetSub = null) {
+function getSubscriptionStats(targetId, targetSub = null) {
     let name = "Default";
     let id = activeDeviceId;
     let limitTotalReq = 0;
@@ -2790,7 +2796,7 @@ function getSubscriptionStats(targetSub = null) {
     
     let hasMultiUser = (sysConfig.users && sysConfig.users.length > 0);
     if (hasMultiUser && targetSub) {
-        let user = sysConfig.users.find(u => u.name.toLowerCase() === targetSub.toLowerCase() || u.id === targetSub);
+        let user = sysConfig.users.find(u => u.name.toLowerCase() === targetSub.toLowerCase() && u.id === targetId);
         if (user) {
             name = user.name;
             id = user.id;
@@ -2832,7 +2838,7 @@ function getCleanIps(hostName, userCleanIps = null) {
 }
 
 
-function getAllProfiles(targetSub = null) {
+function getAllProfiles(targetId, targetSub = null) {
     let list = [{ id: activeDeviceId, name: "Default" }];
     
     if (sysConfig.users && sysConfig.users.length > 0) {
@@ -2854,6 +2860,7 @@ function getAllProfiles(targetSub = null) {
         });
     }
 
+    list = list.filter(p => p.id === targetId);
     if (targetSub) {
         list = list.filter(p => p.name.toLowerCase() === targetSub.toLowerCase());
     }
@@ -2983,7 +2990,7 @@ function calcEffectiveIps(ips, maxCfg, effectiveMode, effectivePorts) {
     return ips.slice(0, neededIps);
 }
 
-async function buildUriProfile(hostName, targetSub = null, allowInsecure = false) {
+async function buildUriProfile(hostName, targetId, targetSub = null, allowInsecure = false) {
     let allHostNames = [hostName];
     if (sysConfig.slaveNodes) allHostNames.push(...sysConfig.slaveNodes.split(/[\r\n,;]+/).map(s=>s.trim()).filter(Boolean));
     
@@ -2991,11 +2998,11 @@ async function buildUriProfile(hostName, targetSub = null, allowInsecure = false
     let reqPath = encodeURI(`/${sysConfig.subRoute}`);
     
     let lines = [];
-    let profiles = getAllProfiles(targetSub);
+    let profiles = getAllProfiles(targetId, targetSub);
     await preloadIpFlags(profiles, allHostNames);
     
     // Add fake configs
-    let stats = getSubscriptionStats(targetSub);
+    let stats = getSubscriptionStats(targetId, targetSub);
     let fakeU1 = `trojan://00000000-0000-0000-0000-000000000000@127.0.0.1:1080?encryption=none&security=none#${encodeURIComponent("📊 " + stats.usedStr)}`;
     let fakeU2 = `trojan://00000000-0000-0000-0000-000000000000@127.0.0.1:1080?encryption=none&security=none#${encodeURIComponent("📅 " + stats.expiryStr)}`;
     lines.push(fakeU1, fakeU2);
@@ -3040,7 +3047,7 @@ async function buildUriProfile(hostName, targetSub = null, allowInsecure = false
     return lines.join('\n');
 }
 
-async function buildYamlProfile(hostName, targetSub = null, allowInsecure = false) {
+async function buildYamlProfile(hostName, targetId, targetSub = null, allowInsecure = false) {
     let allHostNames = [hostName];
     if (sysConfig.slaveNodes) allHostNames.push(...sysConfig.slaveNodes.split(/[\r\n,;]+/).map(s=>s.trim()).filter(Boolean));
     
@@ -3048,11 +3055,11 @@ async function buildYamlProfile(hostName, targetSub = null, allowInsecure = fals
     let proxies = [];
     let proxyNames = [];
     let nameCounts = {}; // Track proxy names for deduplication
-    let profiles = getAllProfiles(targetSub);
+    let profiles = getAllProfiles(targetId, targetSub);
     await preloadIpFlags(profiles, allHostNames);
 
     // Add fake configs
-    let stats = getSubscriptionStats(targetSub);
+    let stats = getSubscriptionStats(targetId, targetSub);
     let fake1 = `📊 ${stats.usedStr}`;
     let fake2 = `📅 ${stats.expiryStr}`;
     proxies.push(`- name: "${fake1}"\n  type: ${getBeta()}\n  server: 127.0.0.1\n  port: 80\n  password: "${activeDeviceId}"\n  udp: true\n  tls: false`);
@@ -3226,11 +3233,11 @@ function getIpTypeLabel(ip) {
     return "Domain";
 }
 
-async function buildClashJsonProfile(hostName, targetSub = null, allowInsecure = false) {
+async function buildClashJsonProfile(hostName, targetId, targetSub = null, allowInsecure = false) {
     let allHostNames = [hostName];
     if (sysConfig.slaveNodes) allHostNames.push(...sysConfig.slaveNodes.split(/[\r\n,;]+/).map(s=>s.trim()).filter(Boolean));
     let ports = sysConfig.socketPorts ? sysConfig.socketPorts.split(',').map(s=>s.trim()).filter(Boolean) : ["443"];
-    let profiles = getAllProfiles(targetSub);
+    let profiles = getAllProfiles(targetId, targetSub);
     await preloadIpFlags(profiles, allHostNames);
     let reqPath = encodeURI(`/${sysConfig.subRoute}`);
 
@@ -3239,7 +3246,7 @@ async function buildClashJsonProfile(hostName, targetSub = null, allowInsecure =
     let nameCounts = {};
 
     // Add fake configs
-    let stats = getSubscriptionStats(targetSub);
+    let stats = getSubscriptionStats(targetId, targetSub);
     let fake1 = `📊 ${stats.usedStr}`;
     let fake2 = `📅 ${stats.expiryStr}`;
     proxiesArr.push({
@@ -3526,11 +3533,11 @@ async function buildClashJsonProfile(hostName, targetSub = null, allowInsecure =
     };
 }
 
-async function buildSingBoxJsonProfile(hostName, targetSub = null, allowInsecure = false) {
+async function buildSingBoxJsonProfile(hostName, targetId, targetSub = null, allowInsecure = false) {
     let allHostNames = [hostName];
     if (sysConfig.slaveNodes) allHostNames.push(...sysConfig.slaveNodes.split(/[\r\n,;]+/).map(s=>s.trim()).filter(Boolean));
     let ports = sysConfig.socketPorts ? sysConfig.socketPorts.split(',').map(s=>s.trim()).filter(Boolean) : ["443"];
-    let profiles = getAllProfiles(targetSub);
+    let profiles = getAllProfiles(targetId, targetSub);
     await preloadIpFlags(profiles, allHostNames);
     let reqPath = encodeURI(`/${sysConfig.subRoute}`);
 
@@ -3539,7 +3546,7 @@ async function buildSingBoxJsonProfile(hostName, targetSub = null, allowInsecure
     let nameCounts = {};
 
     // Add fake configs
-    let stats = getSubscriptionStats(targetSub);
+    let stats = getSubscriptionStats(targetId, targetSub);
     let fake1 = `📊 ${stats.usedStr}`;
     let fake2 = `📅 ${stats.expiryStr}`;
     outboundsArr.push({
