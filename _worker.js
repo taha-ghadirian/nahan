@@ -5,7 +5,7 @@ import { connect } from "cloudflare:sockets";
  * Handles real-time binary streams from remote sensor nodes.
  */
 
-const CURRENT_VERSION = "2.6.0";
+const CURRENT_VERSION = "2.6.1";
 
 const getAlpha = () => String.fromCharCode(118, 108, 101, 115, 115);
 const getBeta = () => String.fromCharCode(116, 114, 111, 106, 97, 110);
@@ -2830,11 +2830,34 @@ function getSubscriptionStats(targetId, targetSub = null) {
     };
 }
 
+function parseCleanIp(entry) {
+    let trimmed = entry.trim();
+    let colonIdx = trimmed.lastIndexOf(':');
+    if (colonIdx > 0) {
+        let after = trimmed.substring(colonIdx + 1);
+        if (!after.includes('.') && !after.includes(':')) {
+            return { ip: trimmed.substring(0, colonIdx), name: after };
+        }
+    }
+    return { ip: trimmed, name: null };
+}
+
 function getCleanIps(hostName, userCleanIps = null) {
     let rawIps = userCleanIps || sysConfig.cleanIps;
-    let ips = rawIps ? rawIps.split(/[\r\n,;]+/).map(s => s.trim()).filter(Boolean) : [];
+    let ips = rawIps ? rawIps.split(/[\r\n,;]+/).map(s => parseCleanIp(s).ip).filter(Boolean) : [];
     if (ips.length === 0) ips = [hostName.endsWith('.pages.dev') ? sysConfig.metricNode : hostName];
     return ips;
+}
+
+function getCleanIpNames(userCleanIps = null) {
+    let rawIps = userCleanIps || sysConfig.cleanIps;
+    if (!rawIps) return {};
+    let map = {};
+    rawIps.split(/[\r\n,;]+/).map(s => s.trim()).filter(Boolean).forEach(entry => {
+        let { ip, name } = parseCleanIp(entry);
+        if (ip && name) map[ip] = name;
+    });
+    return map;
 }
 
 
@@ -2940,6 +2963,8 @@ function getConfigName(type, profileName, port, hostName, ip, proxyIp = null) {
     let strategy = sysConfig.nameStrategy || "default";
     let cleanName = profileName === "Default" ? "" : `-${profileName}`;
     let typeLab = type === "alpha" ? "V" : "T";
+    let ipNames = getCleanIpNames();
+    let ipName = (ip && ipNames[ip]) || '';
     
     if (strategy.includes('{') && strategy.includes('}')) {
         let lookupIp = ip;
@@ -2958,7 +2983,8 @@ function getConfigName(type, profileName, port, hostName, ip, proxyIp = null) {
             .replace(/{USER}/g, profileName)
             .replace(/{PORT}/g, port)
             .replace(/{PREFIX}/g, prefix)
-            .replace(/{IP}/g, ip || '');
+            .replace(/{IP}/g, ip || '')
+            .replace(/{IP_NAME}/g, ipName);
         return resName;
     }
     
@@ -4612,7 +4638,7 @@ function getDashboardUI(hasDB) {
                                   <h3 class="text-sm uppercase font-bold text-slate-500 tracking-wider" data-i18n="lbl_clean_ips">Clean IPs (Multi-Generator)</h3>
                                   <span class="text-xs bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 px-2 py-1 rounded-md font-bold" id="ip-count-badge">1 Config Set</span>
                               </div>
-                              <textarea id="cfg-ips" rows="3" data-i18n="ph_clean_ips" placeholder="" class="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-darkborder bg-slate-50 dark:bg-slate-800 focus:border-primary focus:ring-1 outline-none font-mono text-sm resize-none"></textarea>
+                              <textarea id="cfg-ips" rows="3" data-i18n="ph_clean_ips" placeholder="" dir="ltr" class="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-darkborder bg-slate-50 dark:bg-slate-800 focus:border-primary focus:ring-1 outline-none font-mono text-sm resize-none"></textarea>
                               <p class="text-xs text-slate-400 mt-2" data-i18n="desc_clean_ips">Put one IP per line. The Sync URL will multiply configs for all IPs.</p>
                               <button id="btn-resolve-smart-ips" onclick="resolveSmartCleanIps()" class="mt-3 w-full sm:w-auto px-4 py-2.5 bg-primary/10 hover:bg-primary/20 text-primary border border-primary/20 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2">
                                   <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
@@ -4928,7 +4954,7 @@ function getDashboardUI(hasDB) {
     <label class="block text-xs font-bold text-slate-500 mb-1">Select Clean IPs</label>
     <div id="add-user-clean-ips-wrap" class="flex flex-wrap gap-2 mt-1 text-slate-500"></div>
                                            <label class="block text-[10px] font-bold text-slate-400 mt-2">Or enter Custom Clean IPs (separated by commas or newlines)</label>
-                                           <textarea id="add-user-custom-clean" rows="1" placeholder="e.g. 1.2.3.4, 5.6.7.8" class="w-full mt-1 px-4 py-2 rounded-xl border border-slate-200 dark:border-darkborder bg-slate-50 dark:bg-slate-800 focus:border-primary outline-none text-sm"></textarea>
+                                           <textarea id="add-user-custom-clean" rows="1" placeholder="e.g. 1.2.3.4, 5.6.7.8" dir="ltr" class="w-full mt-1 px-4 py-2 rounded-xl border border-slate-200 dark:border-darkborder bg-slate-50 dark:bg-slate-800 focus:border-primary outline-none text-sm"></textarea>
  </div>
  <div>
     <label class="block text-xs font-bold text-slate-500 mb-1">Select Proxy IPs</label>
@@ -4995,7 +5021,7 @@ function getDashboardUI(hasDB) {
     <label class="block text-xs font-bold text-slate-500 mb-1">Select Clean IPs</label>
     <div id="edit-user-clean-ips-wrap" class="flex flex-wrap gap-2 mt-1 text-slate-500"></div>
                                            <label class="block text-[10px] font-bold text-slate-400 mt-2">Or enter Custom Clean IPs (separated by commas or newlines)</label>
-                                           <textarea id="edit-user-custom-clean" rows="1" placeholder="e.g. 1.2.3.4, 5.6.7.8" class="w-full mt-1 px-4 py-2 rounded-xl border border-slate-200 dark:border-darkborder bg-slate-50 dark:bg-slate-800 focus:border-primary outline-none text-sm"></textarea>
+                                           <textarea id="edit-user-custom-clean" rows="1" placeholder="e.g. 1.2.3.4, 5.6.7.8" dir="ltr" class="w-full mt-1 px-4 py-2 rounded-xl border border-slate-200 dark:border-darkborder bg-slate-50 dark:bg-slate-800 focus:border-primary outline-none text-sm"></textarea>
  </div>
  <div>
     <label class="block text-xs font-bold text-slate-500 mb-1">Select Proxy IPs</label>
@@ -5251,7 +5277,7 @@ function getDashboardUI(hasDB) {
                   lbl_proto: "Primary Display Mode", lbl_port: "Data Port", lbl_id: "Device UUID (Empty=Auto)",
                   lbl_path: "API Route (Hidden Path)", lbl_pass: "Master Key", lbl_fp: "TLS Signature", lbl_dns: "Resolver IP",
                   lbl_sub: "Subscription Route (Public Path)",
-                  lbl_clean_ips: "Clean IPs (Multi-Generator)", ph_clean_ips: "1.1.1.1, 2.2.2.2", desc_clean_ips: "Separate IPs by comma or new line. The Sync URL will multiply configs for all IPs.",
+                  lbl_clean_ips: "Clean IPs (Multi-Generator)", ph_clean_ips: "1.1.1.1:Name1, 2.2.2.2:Name2", desc_clean_ips: "Separate IPs by comma or new line. Optionally append :Name to each IP for use with {IP_NAME} in config names. The Sync URL will multiply configs for all IPs.",
                   lbl_fake: "Maintenance Hosts (Camouflage)", lbl_relay: "Backup Relay IP", lbl_tfo: "TCP Fast Open", lbl_ech: "Secure Hello (ECH)",                   lbl_tg_token: "Telegram Bot Token", lbl_tg_chat: "Telegram Chat ID", lbl_tg_admin: "Authorized Telegram Admin ID", desc_tg_admin: "Only this Telegram User ID can manage the panel via bot. Leave empty to use Chat ID.", desc_tg_bot: "Set these values to receive login alerts via Telegram.",
                   lbl_cf_acc: "Cloudflare Account ID", lbl_cf_token: "Cloudflare API Token", desc_cf_api: "Optional: Monitor Worker daily usage limit (100k/day). Requires Account Analytics read permission.",
                   lbl_silent: "Silent UI Alerts", lbl_pause: "Kill Switch (Pause System)",
@@ -5294,7 +5320,7 @@ function getDashboardUI(hasDB) {
                     format_obfuscated: "Obfuscated (UTF-8 + XOR)",
                     btn_redeploy_force: "Force Redeploy / Switch Format",
                    update_requires_cf: "Set CF Account ID, API Token, and Worker Name to enable in-panel deploy.",
-                   html_desc_strategy: "Supported placeholders: <code class='bg-slate-100 dark:bg-slate-800/80 px-1 py-0.5 rounded text-rose-500 font-mono'>{FLAG}</code>, <code class='bg-slate-100 dark:bg-slate-800/80 px-1 py-0.5 rounded text-rose-500 font-mono'>{PROTOCOL}</code>, <code class='bg-slate-100 dark:bg-slate-800/80 px-1 py-0.5 rounded text-rose-500 font-mono'>{USER}</code>, <code class='bg-slate-100 dark:bg-slate-800/80 px-1 py-0.5 rounded text-rose-500 font-mono'>{PORT}</code>, <code class='bg-slate-100 dark:bg-slate-800/80 px-1 py-0.5 rounded text-rose-500 font-mono'>{PREFIX}</code>, <code class='bg-slate-100 dark:bg-slate-800/80 px-1 py-0.5 rounded text-rose-500 font-mono'>{IP}</code>.<br><span class='text-[10px] text-slate-400 dark:text-slate-500 leading-snug'>• <b>{FLAG}</b>: Country flag emoji (e.g. 🇺🇸).<br>• <b>{PROTOCOL}</b>: Core mode (VLESS / Trojan).<br>• <b>{USER}</b>: Subscriber name.<br>• <b>{PORT}</b>: Active port.<br>• <b>{PREFIX}</b>: Custom prefix.<br>• <b>{IP}</b>: Clean IP address.</span><br>Pre-defined strategies: <code>default</code>, <code>type-user-port</code>, <code>user-port</code>, <code>host-port-user</code>, <code>prefix-user-port</code>, <code>ip</code>.",
+                   html_desc_strategy: "Supported placeholders: <code class='bg-slate-100 dark:bg-slate-800/80 px-1 py-0.5 rounded text-rose-500 font-mono'>{FLAG}</code>, <code class='bg-slate-100 dark:bg-slate-800/80 px-1 py-0.5 rounded text-rose-500 font-mono'>{PROTOCOL}</code>, <code class='bg-slate-100 dark:bg-slate-800/80 px-1 py-0.5 rounded text-rose-500 font-mono'>{USER}</code>, <code class='bg-slate-100 dark:bg-slate-800/80 px-1 py-0.5 rounded text-rose-500 font-mono'>{PORT}</code>, <code class='bg-slate-100 dark:bg-slate-800/80 px-1 py-0.5 rounded text-rose-500 font-mono'>{PREFIX}</code>, <code class='bg-slate-100 dark:bg-slate-800/80 px-1 py-0.5 rounded text-rose-500 font-mono'>{IP}</code>, <code class='bg-slate-100 dark:bg-slate-800/80 px-1 py-0.5 rounded text-rose-500 font-mono'>{IP_NAME}</code>.<br><span class='text-[10px] text-slate-400 dark:text-slate-500 leading-snug'>• <b>{FLAG}</b>: Country flag emoji (e.g. 🇺🇸).<br>• <b>{PROTOCOL}</b>: Core mode (VLESS / Trojan).<br>• <b>{USER}</b>: Subscriber name.<br>• <b>{PORT}</b>: Active port.<br>• <b>{PREFIX}</b>: Custom prefix.<br>• <b>{IP}</b>: Clean IP address.<br>• <b>{IP_NAME}</b>: Custom name from Clean IPs (e.g. <code>1.1.1.1:Cloudflare</code> → Cloudflare).</span><br>Pre-defined strategies: <code>default</code>, <code>type-user-port</code>, <code>user-port</code>, <code>host-port-user</code>, <code>prefix-user-port</code>, <code>ip</code>.",
                },
               fa: {
                   title: "دروازه نهان", pass_ph: "کلید اصلی", login_btn: "ورود به سیستم", err_pass: "دسترسی مسدود شد", missing_db: "⚠️ فضای پایگاه داده یافت نشد! تنظیمات ذخیره نمی‌شوند.",
@@ -5304,7 +5330,7 @@ function getDashboardUI(hasDB) {
                   lbl_proto: "پروتکل نمایش مستقیم", lbl_port: "پورت داده", lbl_id: "شناسه یکتا (خالی=خودکار)",
                   lbl_path: "مسیر مخفی آی‌پی‌آی", lbl_pass: "کلید اصلی", lbl_fp: "امضای امنیتی", lbl_dns: "آی‌پی تحلیلگر",
                   lbl_sub: "مسیر پابلیک سابسکریپشن",
-                  lbl_clean_ips: "آی‌پی‌های تمیز (مولد چندگانه)", ph_clean_ips: "1.1.1.1, 2.2.2.2", desc_clean_ips: "آی‌پی ها را با کاما یا خط جدید جدا کنید. لینک ساب برای همه ترکیب می‌سازد.",
+                  lbl_clean_ips: "آی‌پی‌های تمیز (مولد چندگانه)", ph_clean_ips: "1.1.1.1:Name1, 2.2.2.2:Name2", desc_clean_ips: "آی‌پی ها را با کاما یا خط جدید جدا کنید. به‌صورت اختیاری :Name را به هر آی‌پی اضافه کنید تا در {IP_NAME} نام کانفیگ استفاده شود. لینک ساب برای همه ترکیب می‌سازد.",
                   lbl_fake: "سایت‌های استتار (حالت مخفی)", lbl_relay: "آی‌پی جایگزین (کمکی)", lbl_tfo: "اتصال سریع", lbl_ech: "سلام امن", lbl_tg_token: "توکن ربات تلگرام", lbl_tg_chat: "شناسه عددی تلگرام", lbl_tg_admin: "شناسه مدیر تلگرام", desc_tg_admin: "فقط این شناسه کاربری تلگرام می‌تواند پنل را از طریق ربات مدیریت کند. خالی بگذارید برای استفاده از شناسه چت.", desc_tg_bot: "با تنظیم این مقادیر، جزئیات ورود به پنل به تلگرام ارسال می‌شود.",
                   lbl_cf_acc: "شناسه اکانت ابری", lbl_cf_token: "توکن دسترسی کاربری", desc_cf_api: "اختیاری: برای نمایش میزان مصرف روزانه کارگر از صد هزار درخواست رایگان در پیام‌های تلگرام.",
                   lbl_silent: "هشدار و پیغام خاموش", lbl_pause: "کلید توقف اضطراری",
@@ -5354,11 +5380,25 @@ function getDashboardUI(hasDB) {
                       lbl_cf_worker: "نام اسکریپت کارگر ابری", desc_cf_worker: "برای بروزرسانی خودکار الزامی است. نام اسکریپت در داشبورد کارگرهای ابری.",
                       view_github: "مشاهده در گیت‌هاب",
                      update_requires_cf: "برای نصب خودکار، شناسه اکانت، توکن API و نام کارگر را تنظیم کنید.",
-                     html_desc_strategy: "متغیرهای پشتیبانی شده: <code class='bg-slate-100 dark:bg-slate-800/80 px-1 py-0.5 rounded text-rose-500 font-mono'>{FLAG}</code>، <code class='bg-slate-100 dark:bg-slate-800/80 px-1 py-0.5 rounded text-rose-500 font-mono'>{PROTOCOL}</code>، <code class='bg-slate-100 dark:bg-slate-800/80 px-1 py-0.5 rounded text-rose-500 font-mono'>{USER}</code>، <code class='bg-slate-100 dark:bg-slate-800/80 px-1 py-0.5 rounded text-rose-500 font-mono'>{PORT}</code>، <code class='bg-slate-100 dark:bg-slate-800/80 px-1 py-0.5 rounded text-rose-500 font-mono'>{PREFIX}</code>، <code class='bg-slate-100 dark:bg-slate-800/80 px-1 py-0.5 rounded text-rose-500 font-mono'>{IP}</code>.<br><span class='text-[10px] text-slate-400 dark:text-slate-500 leading-snug'>• <b>{FLAG}</b>: ایموجی پرچم مربوط به کشور آی‌پی لبه (مثلاً 🇺🇸).<br>• <b>{PROTOCOL}</b>: پروتکل اصلی هسته (VLESS / Trojan).<br>• <b>{USER}</b>: نام یا شناسه مشترک ساب.<br>• <b>{PORT}</b>: پورت فعال اتصال.<br>• <b>{PREFIX}</b>: پیشوند نام دلخواه.<br>• <b>{IP}</b>: آدرس آی‌پی تمیز.</span><br>طرح‌های از پیش تعریف شده: <code>default</code>، <code>type-user-port</code>، <code>user-port</code>، <code>host-port-user</code>، <code>prefix-user-port</code>، <code>ip</code>.",
+                     html_desc_strategy: "متغیرهای پشتیبانی شده: <code class='bg-slate-100 dark:bg-slate-800/80 px-1 py-0.5 rounded text-rose-500 font-mono'>{FLAG}</code>، <code class='bg-slate-100 dark:bg-slate-800/80 px-1 py-0.5 rounded text-rose-500 font-mono'>{PROTOCOL}</code>، <code class='bg-slate-100 dark:bg-slate-800/80 px-1 py-0.5 rounded text-rose-500 font-mono'>{USER}</code>، <code class='bg-slate-100 dark:bg-slate-800/80 px-1 py-0.5 rounded text-rose-500 font-mono'>{PORT}</code>، <code class='bg-slate-100 dark:bg-slate-800/80 px-1 py-0.5 rounded text-rose-500 font-mono'>{PREFIX}</code>، <code class='bg-slate-100 dark:bg-slate-800/80 px-1 py-0.5 rounded text-rose-500 font-mono'>{IP}</code>، <code class='bg-slate-100 dark:bg-slate-800/80 px-1 py-0.5 rounded text-rose-500 font-mono'>{IP_NAME}</code>.<br><span class='text-[10px] text-slate-400 dark:text-slate-500 leading-snug'>• <b>{FLAG}</b>: ایموجی پرچم مربوط به کشور آی‌پی لبه (مثلاً 🇺🇸).<br>• <b>{PROTOCOL}</b>: پروتکل اصلی هسته (VLESS / Trojan).<br>• <b>{USER}</b>: نام یا شناسه مشترک ساب.<br>• <b>{PORT}</b>: پورت فعال اتصال.<br>• <b>{PREFIX}</b>: پیشوند نام دلخواه.<br>• <b>{IP}</b>: آدرس آی‌پی تمیز.<br>• <b>{IP_NAME}</b>: نام سفارشی از آی‌پی‌های تمیز (مثلاً <code>1.1.1.1:Cloudflare</code> → Cloudflare).</span><br>طرح‌های از پیش تعریف شده: <code>default</code>، <code>type-user-port</code>، <code>user-port</code>، <code>host-port-user</code>، <code>prefix-user-port</code>، <code>ip</code>.",
                 }
           };
 
           const CHANGELOG_DATA = {
+                "2.6.1": {
+                  headline: { en: "Named Clean IPs & {IP_NAME} Config Placeholder", fa: "نام‌گذاری آی‌پی‌های تمیز و متغیر {IP_NAME} در نام کانفیگ" },
+                  added: [
+                      { en: "Support custom names for Clean IPs using the format ip:name (e.g. 1.1.1.1:Cloudflare)", fa: "پشتیبانی از نام‌گذاری دلخواه آی‌پی‌های تمیز با فرمت ip:name (مثلاً 1.1.1.1:Cloudflare)" },
+                      { en: "Added {IP_NAME} placeholder for config name strategy templates", fa: "افزودن متغیر {IP_NAME} برای قالب‌های نام کانفیگ" },
+                      { en: "Set Clean IPs input direction to LTR for better readability", fa: "تنظیم جهت ورودی آی‌پی‌های تمیز به LTR برای خوانایی بهتر" }
+                  ],
+                  fixed: [
+                  ],
+                  improved: [
+                      { en: "Updated Clean IPs placeholder and help text to document ip:name format", fa: "بروزرسانی متن راهنما و placeholder آی‌پی‌های تمیز برای مستندسازی فرمت ip:name" }
+                  ],
+                  notes: []
+              },
                 "2.6.0": {
                   headline: { en: "SubscriptionURL Change & Control Panel Enhancements", fa: "تغییر SubscriptionURL و بهبود پنل کنترل" },
                   breaking: [
