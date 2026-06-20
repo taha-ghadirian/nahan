@@ -357,7 +357,7 @@ https://<YOUR_WORKER_DOMAIN>/sync/sub?sub=سارا
 
 <div align="center">
 
-[📖 README فارسی](./README_FA.md) · [🌐 راهنمای انگلیسی](./HELP.md) · [⭐ ستاره در GitHub](https://github.com/itsyebekhe/nahan)
+[📖 README فارسی](./README_FA.md) · [🌐 راهنمای انگلیسی](./HELP.md) · [⭐ ستاره در GitHub](https://github.com/taha-ghadirian/nahan)
 
 </div>
 
