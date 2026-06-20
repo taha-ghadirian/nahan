@@ -5,7 +5,7 @@ import { connect } from "cloudflare:sockets";
  * Handles real-time binary streams from remote sensor nodes.
  */
 
-const CURRENT_VERSION = "2.5.8";
+const CURRENT_VERSION = "2.6.0";
 
 const getAlpha = () => String.fromCharCode(118, 108, 101, 115, 115);
 const getBeta = () => String.fromCharCode(116, 114, 111, 106, 97, 110);
@@ -27,6 +27,7 @@ const safeBtoa = (str) => {
 const SYSTEM_DEFAULTS = {
     name: "",
     apiRoute: "sync",
+    subRoute: "sub",
     maintenanceHost: "https://www.ubuntu.com, https://www.docker.com",
     backupRelay: "",
     customRelay: "",
@@ -265,13 +266,15 @@ export default {
                 users: `/${encodeURI(sysConfig.apiRoute)}/api/users`,
                 stats: `/${encodeURI(sysConfig.apiRoute)}/api/stats`,
                 update: `/${encodeURI(sysConfig.apiRoute)}/api/update`,
+                sub: `/${encodeURI(sysConfig.subRoute)}`,
             };
 
             const isSyncRoute = reqPath.endsWith('/api/sync');
             const isUsersRoute = reqPath === routes.users || reqPath.endsWith('/api/users');
             const isStatsRoute = reqPath === routes.stats || reqPath.endsWith('/api/stats');
             const isUpdateRoute = reqPath === routes.update || reqPath.endsWith('/api/update');
-            const isAuthorizedRoute = reqPath === routes.data || reqPath === routes.dash || reqPath === routes.auth || reqPath === routes.sync || reqPath === routes.tg || reqPath === routes.syncPanel || reqPath === routes.logs || isSyncRoute || isUsersRoute || isStatsRoute || isUpdateRoute;
+            const isSubRoute = reqPath === routes.sub;
+            const isAuthorizedRoute = reqPath === routes.data || reqPath === routes.dash || reqPath === routes.auth || reqPath === routes.sync || reqPath === routes.tg || reqPath === routes.syncPanel || reqPath === routes.logs || isSyncRoute || isUsersRoute || isStatsRoute || isUpdateRoute || isSubRoute;
 
             if (!isTelemetryStream && !isAuthorizedRoute) {
                 return serveMaintenancePage(request, url);
@@ -310,18 +313,24 @@ export default {
                     if (request.method !== "POST") return new Response("405", { status: 405 });
                     return await handleTelegramWebhook(request, env, url.hostname, ctx);
                 }
-                if (reqPath === routes.data) {
+                if (isSubRoute) {
                     const ua = (request.headers.get("User-Agent") || "").toLowerCase();
                     const isCustomUaAllowed = sysConfig.subUserAgent && sysConfig.subUserAgent.trim().length > 0 && ua.includes(sysConfig.subUserAgent.trim().toLowerCase());
                     const clientHost = request.headers.get("Host") || url.hostname;
                     let targetSub = url.searchParams.get("sub");
+                    let targetId = url.searchParams.get("id");
+
+                    if(!targetId) {
+                        return new Response("Error: Missing 'id' parameter. Please provide your user ID in the subscription link.", { status: 400 });
+                    }
+
                     let hasMultiUser = (sysConfig.users && sysConfig.users.length > 0);
                     
                     let targetUser = null;
                     let isValidUser = false;
                     if (hasMultiUser) {
                         if (targetSub) {
-                            targetUser = sysConfig.users.find(u => u.name.toLowerCase() === targetSub.toLowerCase() || u.id === targetSub);
+                            targetUser = sysConfig.users.find(u => u.name.toLowerCase() === targetSub.toLowerCase() && u.id === targetId);
                             if (targetUser) isValidUser = true;
                         }
                     } else {
@@ -419,22 +428,22 @@ export default {
 
                     if (isClashYaml) {
                         resHeaders.set("Content-Type", "text/yaml; charset=utf-8");
-                        return new Response(await buildYamlProfile(clientHost, targetSub, allowInsecure), {
+                        return new Response(await buildYamlProfile(clientHost, targetId, targetSub, allowInsecure), {
                             headers: resHeaders
                         });
                     } else if (isSingboxJson) {
                         resHeaders.set("Content-Type", "application/json; charset=utf-8");
-                        return new Response(JSON.stringify(await buildSingBoxJsonProfile(clientHost, targetSub, allowInsecure), null, 2), {
+                        return new Response(JSON.stringify(await buildSingBoxJsonProfile(clientHost, targetId, targetSub, allowInsecure), null, 2), {
                             headers: resHeaders
                         });
                     } else if (isClashJson) {
                         resHeaders.set("Content-Type", "application/json; charset=utf-8");
-                        return new Response(JSON.stringify(await buildClashJsonProfile(clientHost, targetSub, allowInsecure), null, 2), {
+                        return new Response(JSON.stringify(await buildClashJsonProfile(clientHost, targetId, targetSub, allowInsecure), null, 2), {
                             headers: resHeaders
                         });
                     } else {
                         resHeaders.set("Content-Type", "text/plain; charset=utf-8");
-                        const raw = await buildUriProfile(clientHost, targetSub, allowInsecure);
+                        const raw = await buildUriProfile(clientHost, targetId, targetSub, allowInsecure);
                         return new Response(safeBtoa(raw), {
                             headers: resHeaders
                         });
@@ -855,7 +864,7 @@ async function sendTelegramMessage(request, type, hostName) {
     const locT = (key) => botI18n[langCode]?.[key] || botI18n["en"]?.[key] || key;
     const isPaused = sysConfig.isPaused || false;
     const panelUrl = `https://${h}/${encodeURI(sysConfig.apiRoute)}/dash`;
-    const subUrl = `https://${h}/${sysConfig.apiRoute}`;
+    const subUrl = `https://${h}/${sysConfig.subRoute}`;
     const inline_keyboard = [
         [
             { text: `📊 ${locT("dashboard")}`, callback_data: "sys_dashboard" },
@@ -975,7 +984,7 @@ async function handleUsersApi(request, env, ctx) {
             else if (u.isPaused) status = "paused";
             else if (isExpired) status = "expired";
             const hostName = new URL(request.url).hostname;
-            const subUrl = `https://${hostName}/${sysConfig.apiRoute}?sub=${encodeURIComponent(u.name)}`;
+            const subUrl = `https://${hostName}/${sysConfig.subRoute}?id=${encodeURIComponent(u.id)}&sub=${encodeURIComponent(u.name)}`;
             return new Response(JSON.stringify({ success: true, user: { ...u, usage: { total: usedBytes, limit: limitBytes, daily: sysU.dReqs || 0, dailyLimit: u.limitDailyReq || 0 }, status, subscriptionUrl: subUrl } }), { headers: { "Content-Type": "application/json" } });
         }
 
@@ -1003,7 +1012,7 @@ cleanIp: cleanIp || null,
             await cachedD1Put(env, "sys_config", JSON.stringify(sysConfig));
             ctx?.waitUntil(logActivity(env, "User Created", `User "${name}" (${newId}) created via API`).catch(()=>{}));
             const hostName = new URL(request.url).hostname;
-            const subUrl = `https://${hostName}/${sysConfig.apiRoute}?sub=${encodeURIComponent(name)}`;
+            const subUrl = `https://${hostName}/${sysConfig.subRoute}?id=${encodeURIComponent(newId)}&sub=${encodeURIComponent(name)}`;
             return new Response(JSON.stringify({ success: true, user: newUser, subscriptionUrl: subUrl }), { status: 201, headers: { "Content-Type": "application/json" } });
         }
 
@@ -1281,11 +1290,11 @@ async function handleAuth(request, hostName, ctx, env) {
                 success: true, config: sysConfig, deviceId: activeDeviceId, network: netInfo, usage: usageData, sysUsage: (sysUsageCache && sysUsageCache.users) ? sysUsageCache.users : {},
                 version: CURRENT_VERSION,
                 profiles: getAllProfiles().map(p => {
-                    let subSuffix = p.name === 'Default' ? '' : '?sub=' + encodeURIComponent(p.name);
+                    let subSuffix = '?id=' + encodeURIComponent(p.id) + (p.name === 'Default' ? '' : '&sub=' + encodeURIComponent(p.name));
                     return {
                         name: p.name,
                         id: p.id,
-                        sync: `${protocol}://${baseHost}/${sysConfig.apiRoute}${subSuffix}`
+                        sync: `${protocol}://${baseHost}/${sysConfig.subRoute}${subSuffix}`
                     };
                 })
             }), { status: 200 });
@@ -1732,7 +1741,7 @@ async function handleTelegramWebhook(request, env, hostName, ctx) {
                          `👥 **${t("users")}**: ${users.length} (${activeCount} ${t("count_active")}, ${pausedCount} ${t("count_paused")}, ${autoDisabledCount} ${t("count_disabled")})\n` +
                          `━━━━━━━━━━━━━━━━`;
             const panelUrl = isLocal ? `https://${hostName}/${encodeURI(sysConfig.apiRoute)}/dash` : null;
-            const subUrl = `https://${hostName}/${sysConfig.apiRoute}`;
+            const subUrl = `https://${hostName}/${sysConfig.subRoute}`;
             /** @type {any} */
             const inline_keyboard = [];
             if (isAdmin) {
@@ -1851,7 +1860,7 @@ async function handleTelegramWebhook(request, env, hostName, ctx) {
             
             const statusEmoji = u.isPaused ? "⏸️" : (isExp ? "🔴" : "🟢");
             const statusText = u.isPaused ? t("paused") : (isExp ? t("dash_expired") : t("active"));
-            const subSync = `https://${hostName}/${sysConfig.apiRoute}?sub=${encodeURIComponent(u.name)}`;
+            const subSync = `https://${hostName}/${sysConfig.subRoute}?id=${encodeURIComponent(u.id)}&sub=${encodeURIComponent(u.name)}`;
             const maxCfgTxt = u.maxConfigs || t("unlimited");
             const notesTxt = u.notes || t("lbl_none");
             
@@ -2114,6 +2123,7 @@ async function handleTelegramWebhook(request, env, hostName, ctx) {
                     await sendOrEdit(chatId, text, kb, messageId);
                 } else if (data === "sys_panic_confirm") {
                     sysConfig.apiRoute = Array.from(crypto.getRandomValues(new Uint8Array(8))).map(b => b.toString(16).padStart(2,'0')).join('');
+                    sysConfig.subRoute = Array.from(crypto.getRandomValues(new Uint8Array(8))).map(b => b.toString(16).padStart(2,'0')).join('');
                     sysConfig.isPaused = true;
                     await cachedD1Put(env, "sys_config", JSON.stringify(sysConfig));
                     const successText = `${t("msg_panic")}\n\n🔑 New Secret Path Randomized. All old sessions revoked.`;
@@ -2219,11 +2229,13 @@ async function handleTelegramWebhook(request, env, hostName, ctx) {
                     if (activePanel.isLocal) {
                         infoText += `🌐 **Host**: ${hostName}\n`;
                         infoText += `🔑 **API Route**: \`${sysConfig.apiRoute}\`\n`;
+                        infoText += `🎁 **Sub Route**: \`${sysConfig.subRoute}\`\n`;
                         infoText += `📡 **Mode**: ${sysConfig.mode || 'alpha'}\n`;
                         infoText += `🔒 **Ports**: ${sysConfig.socketPorts || '443'}\n`;
                     } else {
                         infoText += `🌐 **Host**: ${activePanel.host}\n`;
                         infoText += `🔑 **API Route**: \`${activePanel.apiRoute}\`\n`;
+                        infoText += `🎁 **Sub Route**: \`${activePanel.subRoute}\`\n`;
                     }
                     infoText += `📱 **Version**: ${CURRENT_VERSION}\n`;
                     infoText += `━━━━━━━━━━━━━━━━`;
@@ -2320,7 +2332,7 @@ async function handleTelegramWebhook(request, env, hostName, ctx) {
                     const detail = getSubDetail(uuid, panelUsers);
                     await sendOrEdit(chatId, `✅ ${t("status_updated")}`, detail.kb, messageId);
                 } else if (data === "get_sub_link") {
-                    const subUrl = `https://${hostName}/${sysConfig.apiRoute}`;
+                    const subUrl = `https://${hostName}/${sysConfig.subRoute}`;
                     await fetch(`${tgApi}/sendMessage`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
@@ -2776,7 +2788,7 @@ function getTransportParams(port) {
     return ["80", "8080", "8880", "2052", "2082", "2086", "2095"].includes(port.toString()) ? "none" : "tls";
 }
 
-function getSubscriptionStats(targetSub = null) {
+function getSubscriptionStats(targetId, targetSub = null) {
     let name = "Default";
     let id = activeDeviceId;
     let limitTotalReq = 0;
@@ -2784,7 +2796,7 @@ function getSubscriptionStats(targetSub = null) {
     
     let hasMultiUser = (sysConfig.users && sysConfig.users.length > 0);
     if (hasMultiUser && targetSub) {
-        let user = sysConfig.users.find(u => u.name.toLowerCase() === targetSub.toLowerCase() || u.id === targetSub);
+        let user = sysConfig.users.find(u => u.name.toLowerCase() === targetSub.toLowerCase() && u.id === targetId);
         if (user) {
             name = user.name;
             id = user.id;
@@ -2826,7 +2838,7 @@ function getCleanIps(hostName, userCleanIps = null) {
 }
 
 
-function getAllProfiles(targetSub = null) {
+function getAllProfiles(targetId = null, targetSub = null) {
     let list = [{ id: activeDeviceId, name: "Default" }];
     
     if (sysConfig.users && sysConfig.users.length > 0) {
@@ -2849,7 +2861,7 @@ function getAllProfiles(targetSub = null) {
     }
 
     if (targetSub) {
-        list = list.filter(p => p.name.toLowerCase() === targetSub.toLowerCase());
+        list = list.filter(p => p.name.toLowerCase() === targetSub.toLowerCase() && p.id == targetId);
     }
     return list;
 }
@@ -2862,7 +2874,7 @@ function buildSingleUri(hostName) {
     let ports = sysConfig.socketPorts ? sysConfig.socketPorts.split(',').map(s=>s.trim()).filter(Boolean) : ["443"];
     let firstPort = ports[0];
     let sec = getTransportParams(firstPort);
-    let reqPath = encodeURI(`/${sysConfig.apiRoute}`);
+    let reqPath = encodeURI(`/${sysConfig.subRoute}`);
     let uriProto = sysConfig.mode === "beta" ? getBeta() : getAlpha();
     let ext = `encryption=none&security=${sec}&sni=${finalHost}&fp=${sysConfig.agent}&type=ws&host=${finalHost}&path=${reqPath}`;
     if (sysConfig.enableOpt2) ext += `&pbk=enabled`;
@@ -2977,19 +2989,19 @@ function calcEffectiveIps(ips, maxCfg, effectiveMode, effectivePorts) {
     return ips.slice(0, neededIps);
 }
 
-async function buildUriProfile(hostName, targetSub = null, allowInsecure = false) {
+async function buildUriProfile(hostName, targetId, targetSub = null, allowInsecure = false) {
     let allHostNames = [hostName];
     if (sysConfig.slaveNodes) allHostNames.push(...sysConfig.slaveNodes.split(/[\r\n,;]+/).map(s=>s.trim()).filter(Boolean));
     
     let ports = sysConfig.socketPorts ? sysConfig.socketPorts.split(',').map(s=>s.trim()).filter(Boolean) : ["443"];
-    let reqPath = encodeURI(`/${sysConfig.apiRoute}`);
+    let reqPath = encodeURI(`/${sysConfig.subRoute}`);
     
     let lines = [];
-    let profiles = getAllProfiles(targetSub);
+    let profiles = getAllProfiles(targetId, targetSub);
     await preloadIpFlags(profiles, allHostNames);
     
     // Add fake configs
-    let stats = getSubscriptionStats(targetSub);
+    let stats = getSubscriptionStats(targetId, targetSub);
     let fakeU1 = `trojan://00000000-0000-0000-0000-000000000000@127.0.0.1:1080?encryption=none&security=none#${encodeURIComponent("📊 " + stats.usedStr)}`;
     let fakeU2 = `trojan://00000000-0000-0000-0000-000000000000@127.0.0.1:1080?encryption=none&security=none#${encodeURIComponent("📅 " + stats.expiryStr)}`;
     lines.push(fakeU1, fakeU2);
@@ -3034,7 +3046,7 @@ async function buildUriProfile(hostName, targetSub = null, allowInsecure = false
     return lines.join('\n');
 }
 
-async function buildYamlProfile(hostName, targetSub = null, allowInsecure = false) {
+async function buildYamlProfile(hostName, targetId, targetSub = null, allowInsecure = false) {
     let allHostNames = [hostName];
     if (sysConfig.slaveNodes) allHostNames.push(...sysConfig.slaveNodes.split(/[\r\n,;]+/).map(s=>s.trim()).filter(Boolean));
     
@@ -3042,11 +3054,11 @@ async function buildYamlProfile(hostName, targetSub = null, allowInsecure = fals
     let proxies = [];
     let proxyNames = [];
     let nameCounts = {}; // Track proxy names for deduplication
-    let profiles = getAllProfiles(targetSub);
+    let profiles = getAllProfiles(targetId, targetSub);
     await preloadIpFlags(profiles, allHostNames);
 
     // Add fake configs
-    let stats = getSubscriptionStats(targetSub);
+    let stats = getSubscriptionStats(targetId, targetSub);
     let fake1 = `📊 ${stats.usedStr}`;
     let fake2 = `📅 ${stats.expiryStr}`;
     proxies.push(`- name: "${fake1}"\n  type: ${getBeta()}\n  server: 127.0.0.1\n  port: 80\n  password: "${activeDeviceId}"\n  udp: true\n  tls: false`);
@@ -3220,20 +3232,20 @@ function getIpTypeLabel(ip) {
     return "Domain";
 }
 
-async function buildClashJsonProfile(hostName, targetSub = null, allowInsecure = false) {
+async function buildClashJsonProfile(hostName, targetId, targetSub = null, allowInsecure = false) {
     let allHostNames = [hostName];
     if (sysConfig.slaveNodes) allHostNames.push(...sysConfig.slaveNodes.split(/[\r\n,;]+/).map(s=>s.trim()).filter(Boolean));
     let ports = sysConfig.socketPorts ? sysConfig.socketPorts.split(',').map(s=>s.trim()).filter(Boolean) : ["443"];
-    let profiles = getAllProfiles(targetSub);
+    let profiles = getAllProfiles(targetId, targetSub);
     await preloadIpFlags(profiles, allHostNames);
-    let reqPath = encodeURI(`/${sysConfig.apiRoute}`);
+    let reqPath = encodeURI(`/${sysConfig.subRoute}`);
 
     let proxiesArr = [];
     let dynamicTags = [];
     let nameCounts = {};
 
     // Add fake configs
-    let stats = getSubscriptionStats(targetSub);
+    let stats = getSubscriptionStats(targetId, targetSub);
     let fake1 = `📊 ${stats.usedStr}`;
     let fake2 = `📅 ${stats.expiryStr}`;
     proxiesArr.push({
@@ -3520,20 +3532,20 @@ async function buildClashJsonProfile(hostName, targetSub = null, allowInsecure =
     };
 }
 
-async function buildSingBoxJsonProfile(hostName, targetSub = null, allowInsecure = false) {
+async function buildSingBoxJsonProfile(hostName, targetId, targetSub = null, allowInsecure = false) {
     let allHostNames = [hostName];
     if (sysConfig.slaveNodes) allHostNames.push(...sysConfig.slaveNodes.split(/[\r\n,;]+/).map(s=>s.trim()).filter(Boolean));
     let ports = sysConfig.socketPorts ? sysConfig.socketPorts.split(',').map(s=>s.trim()).filter(Boolean) : ["443"];
-    let profiles = getAllProfiles(targetSub);
+    let profiles = getAllProfiles(targetId, targetSub);
     await preloadIpFlags(profiles, allHostNames);
-    let reqPath = encodeURI(`/${sysConfig.apiRoute}`);
+    let reqPath = encodeURI(`/${sysConfig.subRoute}`);
 
     let outboundsArr = [];
     let dynamicTags = [];
     let nameCounts = {};
 
     // Add fake configs
-    let stats = getSubscriptionStats(targetSub);
+    let stats = getSubscriptionStats(targetId, targetSub);
     let fake1 = `📊 ${stats.usedStr}`;
     let fake2 = `📅 ${stats.expiryStr}`;
     outboundsArr.push({
@@ -4546,6 +4558,10 @@ function getDashboardUI(hasDB) {
                                   <input type="text" id="cfg-path" class="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-darkborder bg-slate-50 dark:bg-slate-800 focus:border-primary outline-none">
                               </div>
                               <div class="space-y-1">
+                                  <label class="block text-sm font-bold text-slate-600 dark:text-slate-300 ms-1" data-i18n="lbl_sub">Subscription Route (Public Path)</label>
+                                  <input type="text" id="cfg-sub" class="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-darkborder bg-slate-50 dark:bg-slate-800 focus:border-primary outline-none">
+                              </div>
+                              <div class="space-y-1">
                                   <label class="block text-sm font-bold text-slate-600 dark:text-slate-300 ms-1" data-i18n="lbl_pass">Master Key</label>
                                   <div class="relative">
                                       <input type="password" id="cfg-pass" class="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-darkborder bg-slate-50 dark:bg-slate-800 focus:border-primary outline-none pe-12">
@@ -5234,6 +5250,7 @@ function getDashboardUI(hasDB) {
                   stat_ip: "Origin IP", stat_dc: "Edge Node", stat_loc: "Data Region",
                   lbl_proto: "Primary Display Mode", lbl_port: "Data Port", lbl_id: "Device UUID (Empty=Auto)",
                   lbl_path: "API Route (Hidden Path)", lbl_pass: "Master Key", lbl_fp: "TLS Signature", lbl_dns: "Resolver IP",
+                  lbl_sub: "Subscription Route (Public Path)",
                   lbl_clean_ips: "Clean IPs (Multi-Generator)", ph_clean_ips: "1.1.1.1, 2.2.2.2", desc_clean_ips: "Separate IPs by comma or new line. The Sync URL will multiply configs for all IPs.",
                   lbl_fake: "Maintenance Hosts (Camouflage)", lbl_relay: "Backup Relay IP", lbl_tfo: "TCP Fast Open", lbl_ech: "Secure Hello (ECH)",                   lbl_tg_token: "Telegram Bot Token", lbl_tg_chat: "Telegram Chat ID", lbl_tg_admin: "Authorized Telegram Admin ID", desc_tg_admin: "Only this Telegram User ID can manage the panel via bot. Leave empty to use Chat ID.", desc_tg_bot: "Set these values to receive login alerts via Telegram.",
                   lbl_cf_acc: "Cloudflare Account ID", lbl_cf_token: "Cloudflare API Token", desc_cf_api: "Optional: Monitor Worker daily usage limit (100k/day). Requires Account Analytics read permission.",
@@ -5286,6 +5303,7 @@ function getDashboardUI(hasDB) {
                   stat_ip: "آی‌پی مبدا", stat_dc: "گره لبه", stat_loc: "منطقه داده",
                   lbl_proto: "پروتکل نمایش مستقیم", lbl_port: "پورت داده", lbl_id: "شناسه یکتا (خالی=خودکار)",
                   lbl_path: "مسیر مخفی آی‌پی‌آی", lbl_pass: "کلید اصلی", lbl_fp: "امضای امنیتی", lbl_dns: "آی‌پی تحلیلگر",
+                  lbl_sub: "مسیر پابلیک سابسکریپشن",
                   lbl_clean_ips: "آی‌پی‌های تمیز (مولد چندگانه)", ph_clean_ips: "1.1.1.1, 2.2.2.2", desc_clean_ips: "آی‌پی ها را با کاما یا خط جدید جدا کنید. لینک ساب برای همه ترکیب می‌سازد.",
                   lbl_fake: "سایت‌های استتار (حالت مخفی)", lbl_relay: "آی‌پی جایگزین (کمکی)", lbl_tfo: "اتصال سریع", lbl_ech: "سلام امن", lbl_tg_token: "توکن ربات تلگرام", lbl_tg_chat: "شناسه عددی تلگرام", lbl_tg_admin: "شناسه مدیر تلگرام", desc_tg_admin: "فقط این شناسه کاربری تلگرام می‌تواند پنل را از طریق ربات مدیریت کند. خالی بگذارید برای استفاده از شناسه چت.", desc_tg_bot: "با تنظیم این مقادیر، جزئیات ورود به پنل به تلگرام ارسال می‌شود.",
                   lbl_cf_acc: "شناسه اکانت ابری", lbl_cf_token: "توکن دسترسی کاربری", desc_cf_api: "اختیاری: برای نمایش میزان مصرف روزانه کارگر از صد هزار درخواست رایگان در پیام‌های تلگرام.",
@@ -5341,7 +5359,22 @@ function getDashboardUI(hasDB) {
           };
 
           const CHANGELOG_DATA = {
-              "2.5.8": {
+                "2.6.0": {
+                  headline: { en: "SubscriptionURL Change & Control Panel Enhancements", fa: "تغییر SubscriptionURL و بهبود پنل کنترل" },
+                  breaking: [
+                        { en: "SubscriptionURL format changed to include UUID for enhanced security. Existing subscriptions will need to be re-generated.", fa: "فرمت SubscriptionURL تغییر کرده و اکنون شامل UUID برای افزایش امنیت است. مشترکین فعلی نیاز به بازتولید دارند." }
+                  ],
+                  added: [
+                      { en: "Added UUID to SubscriptionURL for improved subscription security", fa: "افزودن UUID به SubscriptionURL برای افزایش امنیت سابسکریپشن" },
+                      { en: "Added Subscription Route to Control Panel", fa: "افزودن مسیر سابسکریپشن به پنل کنترل" }
+                  ],
+                  fixed: [
+                  ],
+                  improved: [
+                  ],
+                  notes: []
+              },
+              "2.5.7": {
                   headline: { en: "Dynamic Multi-IP Failover & Keyless Country Flagging", fa: "لینک هوشمند آی‌پی‌ها، بهبود کلودفلر و نگاشت پرچم بدون تحریم" },
                   added: [
                       { en: "Support entering custom clean IPs, proxy IPs, and custom config names for each subscriber dynamically in Add/Edit user modals, with automatic extraction and seamless database merging", fa: "امکان ثبت آی‌پی تمیز دلخواه، آی‌پی پروکسی دلخواه و نام کانفیگ دلخواه برای هر کاربر به صورت مجزا با قابلیت استخراج خودکار و ادغام هوشمند" },
@@ -5556,6 +5589,7 @@ function getDashboardUI(hasDB) {
               }
 
               const sections = [
+                  { key: 'breaking', icon: '🚫', color: 'red', items: data.breaking },
                   { key: 'added', icon: '✨', color: 'emerald', items: data.added },
                   { key: 'fixed', icon: '🔧', color: 'blue', items: data.fixed },
                   { key: 'improved', icon: '⚡', color: 'violet', items: data.improved },
@@ -5803,10 +5837,10 @@ function getDashboardUI(hasDB) {
                   let finalIP = ipsList.length > 0 ? ipsList[0] : (hostName.endsWith('.pages.dev') ? 'time.is' : hostName);
                   
                   let fp = document.getElementById('cfg-fp').value;
-                  let path = encodeURI("/" + document.getElementById('cfg-path').value);
+                  let subPath = encodeURI("/" + document.getElementById('cfg-sub').value);
                   let sec = ["80","8080"].includes(port) ? "none" : "tls";
                   
-                  let rawLink = proto + "://" + localUUID + "@" + finalIP + ":" + port + "?encryption=none&security=" + sec + "&sni=" + hostName + "&fp=" + fp + "&type=ws&host=" + hostName + "&path=" + path;
+                  let rawLink = proto + "://" + localUUID + "@" + finalIP + ":" + port + "?encryption=none&security=" + sec + "&sni=" + hostName + "&fp=" + fp + "&type=ws&host=" + hostName + "&path=" + subPath;
                   if (document.getElementById('cfg-ech').checked) rawLink += "&pbk=enabled";
                   rawLink += "#" + hostName;
   
@@ -5834,6 +5868,7 @@ function getDashboardUI(hasDB) {
               const payload = {
                   mode: el('cfg-proto').value, socketPorts: Array.from(el('cfg-port').selectedOptions).map(o=>o.value).join(','), deviceId: el('cfg-uuid').value,
                   apiRoute: el('cfg-path').value, masterKey: el('cfg-pass').value, agent: el('cfg-fp').value,
+                  subRoute: el('cfg-sub').value,
                   resolveIp: el('cfg-dns').value, customDns: el('cfg-custom-dns').value ? el('cfg-custom-dns').value : 'https://cloudflare-dns.com/dns-query', cleanIps: el('cfg-ips').value, maintenanceHost: el('cfg-fake').value, backupRelay: el('cfg-relay').value,
                   enableOpt1: el('cfg-tfo').checked, enableOpt2: el('cfg-ech').checked,
                   tgToken: el('cfg-tg-token').value, tgChatId: el('cfg-tg-chat').value, tgAdminId: el('cfg-tg-admin').value,
@@ -5867,6 +5902,7 @@ function getDashboardUI(hasDB) {
                       Array.from(document.getElementById('cfg-port').options).forEach(o => o.selected = pList.includes(o.value));
                       mapId('cfg-uuid', conf.deviceId);
                       mapId('cfg-path', conf.apiRoute);
+                      mapId('cfg-sub', conf.subRoute);
                       mapId('cfg-pass', conf.masterKey);
                       mapId('cfg-fp', conf.agent);
                       mapId('cfg-dns', conf.resolveIp);
@@ -5977,6 +6013,7 @@ function getDashboardUI(hasDB) {
                       syncCheckboxesFromSelect();
                       document.getElementById('cfg-uuid').value = conf.deviceId || '';
                       document.getElementById('cfg-path').value = conf.apiRoute || '';
+                      document.getElementById('cfg-sub').value = conf.subRoute || '';
                       document.getElementById('cfg-pass').value = conf.masterKey || '';
                       document.getElementById('cfg-fp').value = conf.agent || 'chrome';
                       document.getElementById('cfg-dns').value = conf.resolveIp || '';
@@ -6009,7 +6046,7 @@ function getDashboardUI(hasDB) {
                       try { checkUpdate(); } catch(ue) { console.error(ue); }
                       if (!silent) switchTab('overview');
 
-                      ['cfg-proto','cfg-port','cfg-fp','cfg-ips','cfg-nodes','cfg-path', 'cfg-relay', 'cfg-name-strategy', 'cfg-name-prefix', 'cfg-sub-ua', 'cfg-custom-panel-url'].forEach(id => {
+                      ['cfg-proto','cfg-port','cfg-fp','cfg-ips','cfg-nodes', 'cfg-path', 'cfg-sub', 'cfg-relay', 'cfg-name-strategy', 'cfg-name-prefix', 'cfg-sub-ua', 'cfg-custom-panel-url'].forEach(id => {
                           const el = document.getElementById(id);
                           if(el) { el.addEventListener('input', updateUI); el.addEventListener('change', updateUI); }
                       });
@@ -6113,6 +6150,7 @@ function getDashboardUI(hasDB) {
                   config: {
                       mode: el('cfg-proto').value, socketPorts: Array.from(el('cfg-port').selectedOptions).map(o=>o.value).join(','), deviceId: el('cfg-uuid').value,
                       apiRoute: el('cfg-path').value, masterKey: el('cfg-pass').value, agent: el('cfg-fp').value,
+                      subRoute: el('cfg-sub').value,
                       resolveIp: el('cfg-dns').value, customDns: el('cfg-custom-dns').value ? el('cfg-custom-dns').value : 'https://cloudflare-dns.com/dns-query', cleanIps: el('cfg-ips').value, slaveNodes: el('cfg-nodes').value, maintenanceHost: el('cfg-fake').value, backupRelay: el('cfg-relay').value,
                       enableOpt1: el('cfg-tfo').checked, enableOpt2: el('cfg-ech').checked,
                       tgToken: el('cfg-tg-token').value, tgChatId: el('cfg-tg-chat').value, tgAdminId: el('cfg-tg-admin').value,
@@ -6165,6 +6203,7 @@ function getDashboardUI(hasDB) {
                   config: {
                       mode: el('cfg-proto').value, socketPorts: Array.from(el('cfg-port').selectedOptions).map(o=>o.value).join(','), deviceId: el('cfg-uuid').value,
                       apiRoute: el('cfg-path').value, masterKey: el('cfg-pass').value, agent: el('cfg-fp').value,
+                      subRoute: el('cfg-sub').value,
                       resolveIp: el('cfg-dns').value, customDns: el('cfg-custom-dns').value ? el('cfg-custom-dns').value : 'https://cloudflare-dns.com/dns-query', cleanIps: el('cfg-ips').value, slaveNodes: el('cfg-nodes').value, maintenanceHost: el('cfg-fake').value, backupRelay: el('cfg-relay').value,
                       enableOpt1: el('cfg-tfo').checked, enableOpt2: el('cfg-ech').checked,
                       tgToken: el('cfg-tg-token').value, tgChatId: el('cfg-tg-chat').value, tgAdminId: el('cfg-tg-admin').value,
