@@ -978,7 +978,7 @@ async function handleUsersApi(request, env, ctx) {
             else if (u.isPaused) status = "paused";
             else if (isExpired) status = "expired";
             const hostName = new URL(request.url).hostname;
-            const subUrl = `https://${hostName}/${sysConfig.subRoute}?sub=${encodeURIComponent(u.name)}`;
+            const subUrl = `https://${hostName}/${sysConfig.subRoute}?id=${encodeURIComponent(u.id)}&sub=${encodeURIComponent(u.name)}`;
             return new Response(JSON.stringify({ success: true, user: { ...u, usage: { total: usedBytes, limit: limitBytes, daily: sysU.dReqs || 0, dailyLimit: u.limitDailyReq || 0 }, status, subscriptionUrl: subUrl } }), { headers: { "Content-Type": "application/json" } });
         }
 
@@ -1006,7 +1006,7 @@ cleanIp: cleanIp || null,
             await cachedD1Put(env, "sys_config", JSON.stringify(sysConfig));
             ctx?.waitUntil(logActivity(env, "User Created", `User "${name}" (${newId}) created via API`).catch(()=>{}));
             const hostName = new URL(request.url).hostname;
-            const subUrl = `https://${hostName}/${sysConfig.subRoute}?sub=${encodeURIComponent(name)}`;
+            const subUrl = `https://${hostName}/${sysConfig.subRoute}?id=${encodeURIComponent(newId)}&sub=${encodeURIComponent(name)}`;
             return new Response(JSON.stringify({ success: true, user: newUser, subscriptionUrl: subUrl }), { status: 201, headers: { "Content-Type": "application/json" } });
         }
 
@@ -1284,7 +1284,7 @@ async function handleAuth(request, hostName, ctx, env) {
                 success: true, config: sysConfig, deviceId: activeDeviceId, network: netInfo, usage: usageData, sysUsage: (sysUsageCache && sysUsageCache.users) ? sysUsageCache.users : {},
                 version: CURRENT_VERSION,
                 profiles: getAllProfiles().map(p => {
-                    let subSuffix = p.name === 'Default' ? '' : '?sub=' + encodeURIComponent(p.name);
+                    let subSuffix = '?id=' + encodeURIComponent(p.id) + (p.name === 'Default' ? '' : '&sub=' + encodeURIComponent(p.name));
                     return {
                         name: p.name,
                         id: p.id,
@@ -1854,7 +1854,7 @@ async function handleTelegramWebhook(request, env, hostName, ctx) {
             
             const statusEmoji = u.isPaused ? "⏸️" : (isExp ? "🔴" : "🟢");
             const statusText = u.isPaused ? t("paused") : (isExp ? t("dash_expired") : t("active"));
-            const subSync = `https://${hostName}/${sysConfig.subRoute}?sub=${encodeURIComponent(u.name)}`;
+            const subSync = `https://${hostName}/${sysConfig.subRoute}?id=${encodeURIComponent(u.id)}&sub=${encodeURIComponent(u.name)}`;
             const maxCfgTxt = u.maxConfigs || t("unlimited");
             const notesTxt = u.notes || t("lbl_none");
             
