@@ -9,6 +9,34 @@ All notable changes to Project Nahan will be documented in this file.
 
 ---
 
+## [2.6.1] - ۱۴۰۵-۰۳-۳۰ (2026-06-20)
+
+<!-- LANG:FA -->
+### اضافه شده (Added)
+- **نام‌گذاری آی‌پی‌های تمیز**: پشتیبانی از فرمت ip:name برای آی‌پی‌های تمیز (مثلاً 1.1.1.1:Cloudflare)
+- **متغیر {IP_NAME}**: افزودن متغیر {IP_NAME} به قالب‌های نام کانفیگ برای استفاده از نام اختصاصی آی‌پی
+- **جهت LTR برای ورودی آی‌پی‌ها**: تنظیم جهت ورودی آی‌پی‌هایتمیز به چپ به راست برای خوانایی بهتر
+
+### رفع شده (Fixed)
+
+### بهبود یافته (Improved)
+- **متن راهنما**: بروزرسانی placeholder و توضیحات آی‌پی‌های تمیز برای مستندسازی فرمت ip:name
+<!-- LANG:FA -->
+
+<!-- LANG:EN -->
+### Added
+- **Named Clean IPs**: Support custom names for Clean IPs using the format `ip:name` (e.g. `1.1.1.1:Cloudflare`)
+- **{IP_NAME} Config Placeholder**: Added `{IP_NAME}` placeholder for use in config name strategy templates
+- **LTR Input for Clean IPs**: Set Clean IPs textarea direction to left-to-right for better readability
+
+### Fixed
+
+### Improved
+- **Help Text**: Updated Clean IPs placeholder and description to document the `ip:name` format
+<!-- LANG:EN -->
+
+---
+
 ## [2.6.0] - ۱۴۰۵-۰۳-۳۰ (2026-06-20)
 
 <!-- LANG:FA -->
